@@ -5,11 +5,33 @@ var builder = WebApplication.CreateBuilder(args);
 
 // DB
 builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection"))
+	options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection"))
 );
 
-// Stripe
-StripeConfiguration.ApiKey = builder.Configuration["Stripe:SecretKey"];
+
+var stripeKey =
+ Environment.GetEnvironmentVariable("Stripe__Stripe_SecretKey")
+	?? Environment.GetEnvironmentVariable("STRIPE_SECRET_KEY");
+
+
+if (string.IsNullOrEmpty(stripeKey))
+{
+	var error = "Stripe Secret Key not found. Checked: appsettings.json, Stripe_SecretKey, STRIPE_SECRET_KEY, Stripe__SecretKey";
+	Console.WriteLine(error);
+	throw new InvalidOperationException(error);
+}
+
+Console.WriteLine($"Stripe key loaded (starts with: {stripeKey.Substring(0, Math.Min(10, stripeKey.Length))}...)");
+// Add this BEFORE StripeConfiguration.ApiKey
+Console.WriteLine($"Raw key from config: '{stripeKey}'");
+Console.WriteLine($"Key length: {stripeKey.Length}");
+Console.WriteLine($"Key starts with sk_test_: {stripeKey.StartsWith("sk_test_")}");
+Console.WriteLine($"Contains spaces: {stripeKey.Contains(" ")}");
+Console.WriteLine($"Contains newline: {stripeKey.Contains("\n")}");
+
+Console.WriteLine($"KEY DEBUG: [{stripeKey}]");
+
+StripeConfiguration.ApiKey = stripeKey;
 
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
@@ -18,39 +40,30 @@ builder.Services.AddSwaggerGen();
 // CORS
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("AngularApp", policy =>
-    {
-        policy
-            .WithOrigins(
-                "http://localhost:4200",
-                "http://localhost:80",
-                "http://localhost"
-            )
-            .AllowAnyHeader()
-            .AllowAnyMethod();
-    });
+	options.AddPolicy("AngularApp", policy =>
+	{
+		policy
+			.WithOrigins(
+				"http://localhost:4200",
+				"http://localhost:80",
+				"http://localhost"
+			)
+			.AllowAnyHeader()
+			.AllowAnyMethod()
+			.AllowCredentials();
+	});
 });
 
 var app = builder.Build();
-
-// Auto migrations
-using (var scope = app.Services.CreateScope())
-{
-    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    db.Database.Migrate();
-}
 
 // Swagger
 app.UseSwagger();
 app.UseSwaggerUI();
 
-// CORS (IMPORTANT ORDER)
+// CORS
 app.UseCors("AngularApp");
 
-app.UseAuthentication();   // (add this)
 app.UseAuthorization();
-
 app.MapControllers();
 
-// Run on Docker port
-app.Run("http://0.0.0.0:8080"); // ⚠️ recommended fix
+app.Run();
